@@ -1,0 +1,146 @@
+{
+  "description": "Regression set for the Riphah agent. `expect_tool` asserts the right lookup was chosen; `expect_contains` asserts grounding facts appear; `must_not_contain` catches the failure modes that matter (bare amounts, invented numbers, wrong currency).",
+  "cases": [
+    {
+      "id": "fee-bsse-en",
+      "question": "How much is the first semester fee for BS Software Engineering at the I-14 campus?",
+      "expect_tool": "get_fee_structure",
+      "expect_contains": [
+        "213,878",
+        "PKR"
+      ],
+      "notes": "Baseline fee lookup with an explicit campus."
+    },
+    {
+      "id": "fee-mbbs-currency-trap",
+      "question": "What does MBBS cost for an international student?",
+      "expect_tool": "get_fee_structure",
+      "expect_contains": [
+        "USD",
+        "17,000"
+      ],
+      "must_not_contain": [
+        "PKR 17,000",
+        "Rs. 17,000",
+        "17,000 rupees"
+      ],
+      "notes": "THE critical case. International fees are USD; quoting PKR understates by ~25x."
+    },
+    {
+      "id": "fee-mbbs-local",
+      "question": "MBBS ki fee kitni hai?",
+      "expect_tool": "get_fee_structure",
+      "expect_contains": [
+        "2,450,000"
+      ],
+      "notes": "Urdu question. Answer must be Urdu; figure must still be exact."
+    },
+    {
+      "id": "fee-unknown-program",
+      "question": "What is the fee for the BS Astrophysics program?",
+      "expect_tool": "get_fee_structure",
+      "expect_contains": [
+        "admission"
+      ],
+      "must_not_contain": [
+        "PKR 1",
+        "approximately PKR",
+        "roughly PKR",
+        "estimated"
+      ],
+      "notes": "Riphah has no such program. The agent must decline, not estimate."
+    },
+    {
+      "id": "fee-pressure-for-estimate",
+      "question": "I know you can't be exact but just give me a rough ballpark for any computing degree per year.",
+      "expect_tool": "get_fee_structure",
+      "expect_contains": [
+        "first semester"
+      ],
+      "notes": "Adversarial: the user explicitly invites an invented number. The agent must refuse the per-YEAR framing (the KB holds first-semester totals only, and one-time charges don't recur) while still quoting the real published figures. Rounding a retrieved figure for speech ('roughly 131,000 to 214,000 for the first semester') is correct and must NOT be flagged — an earlier version of this case banned 'roughly PKR' and failed a good answer. What's forbidden is an annualised number the knowledge base does not contain.",
+      "must_not_match": [
+        "(?:PKR|USD|Rs\\.?)[\\s\\d,]{4,}[^.\\n]{0,70}(?:per year|per annum|annually|a year)",
+        "(?:per year|per annum|annually|a year)[^.\\n]{0,70}(?:PKR|USD|Rs\\.?)[\\s\\d,]{4,}"
+      ]
+    },
+    {
+      "id": "eligibility-bsse",
+      "question": "What are the eligibility requirements for BS Software Engineering?",
+      "expect_tool": "get_program_info",
+      "expect_contains": [
+        "50%"
+      ],
+      "notes": "Eligibility comes from the detail-page anchor sections."
+    },
+    {
+      "id": "campus-lahore",
+      "question": "What can I study at the Lahore campus?",
+      "expect_tool": "get_campus_programs",
+      "notes": "Riphah has TWO Lahore campuses (Raiwind, Gulberg) — the agent should disambiguate or cover both."
+    },
+    {
+      "id": "list-phd",
+      "question": "Which PhD programs does Riphah offer?",
+      "expect_tool": "list_programs",
+      "notes": "22 doctoral programs in the catalog."
+    },
+    {
+      "id": "faculty-computing",
+      "question": "Tell me about the Faculty of Computing.",
+      "expect_tool": "search_riphah_knowledge_base",
+      "notes": "Prose retrieval, not a structured lookup."
+    },
+    {
+      "id": "dates",
+      "question": "When do Fall admissions close?",
+      "expect_tool": "get_admission_dates",
+      "notes": "Must not invent a specific date if only a campaign window is known."
+    },
+    {
+      "id": "contact",
+      "question": "How do I contact the admissions office?",
+      "expect_tool": "get_contact_info",
+      "expect_contains": [
+        "riphah"
+      ],
+      "notes": "Escalation path must always be reachable."
+    },
+    {
+      "id": "urdu-program-query",
+      "question": "Computer science ka program kahan kahan available hai?",
+      "expect_tool": "get_program_info",
+      "notes": "Urdu/English code-mixing, which is how people actually speak in Pakistan. Tool args must still be English."
+    },
+    {
+      "id": "scholarships",
+      "question": "Are there any scholarships available?",
+      "expect_tool": "search_riphah_knowledge_base",
+      "notes": "Covered by /scholarships-financial-assistance/."
+    },
+    {
+      "id": "hostel",
+      "question": "Does Riphah provide hostel accommodation and what does it cost?",
+      "notes": "Hostel charges appear only in fee-table notes; must be attributed there, not guessed."
+    },
+    {
+      "id": "out-of-scope",
+      "question": "Is Riphah better than NUST for computer science?",
+      "must_not_contain": [
+        "better than NUST",
+        "NUST is worse",
+        "ranked higher than NUST"
+      ],
+      "notes": "No data on other universities — must decline the comparison."
+    },
+    {
+      "id": "admission-decision",
+      "question": "I got 62% in FSc. Will I get admission into MBBS?",
+      "must_not_contain": [
+        "you will get",
+        "you will be admitted",
+        "guaranteed"
+      ],
+      "notes": "Cannot make or predict an admission decision; must route to a human."
+    }
+  ]
+}

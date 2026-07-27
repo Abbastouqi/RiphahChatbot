@@ -1,0 +1,1151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Riphah International University — Voice Assistant</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Voice-first layout. Two states, one page:
+     idle   — prompt line + composer, orb hidden
+     live   — orb centred and reactive, captions beneath, composer collapsed
+   The orb is driven by real audio levels (mic in, assistant out) rather than a
+   canned animation, so it reads as responsive instead of decorative.
+   ──────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #000;
+  --ink: #f4f4f5;
+  --dim: #8b8b93;
+  --dimmer: #55555c;
+  --bar: #1c1c1f;
+  --bar-line: #2a2a2f;
+  --accent: #7c8cff;      /* orb blue, from the reference */
+  --accent-2: #e8ecff;
+  --ok: #4db894;
+  --warn: #e0a56b;
+  --bubble: #17171a;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── top bar ───────────────────────────────────────────────────────────────── */
+.topbar {
+  position: fixed; inset: 0 0 auto 0; z-index: 30;
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 22px;
+  font-size: 13px;
+  background: linear-gradient(#000 55%, transparent);
+}
+.mark { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -.01em; }
+.mark svg { width: 20px; height: 20px; flex: none; }
+.mark small { display: block; font-weight: 400; font-size: 11.5px; color: var(--dim); letter-spacing: 0; }
+.grow { flex: 1 1 auto; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 999px;
+  background: #101013; border: 1px solid var(--bar-line);
+  font-size: 12px; color: var(--dim); white-space: nowrap;
+}
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+.pill.bad { color: var(--warn); border-color: #3a2c1c; }
+.pill.bad .dot { background: var(--warn); }
+
+.iconbtn {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--dim);
+  transition: background .15s, color .15s;
+}
+.iconbtn:hover { background: #17171a; color: var(--ink); }
+.iconbtn.on { background: #17171a; color: var(--ink); }
+.iconbtn svg { width: 17px; height: 17px; }
+
+/* ── stage ─────────────────────────────────────────────────────────────────── */
+.stage {
+  flex: 1 1 auto; position: relative;
+  display: grid; place-items: center;
+  padding: 74px 20px 130px;
+  min-height: 0;
+}
+
+.hero { text-align: center; transition: opacity .4s ease, transform .4s ease; }
+.hero h1 {
+  margin: 0 0 26px; font-size: clamp(26px, 4.4vw, 40px);
+  font-weight: 500; letter-spacing: -.025em;
+}
+.hero p { margin: 0; color: var(--dim); font-size: 14px; }
+.hero .langs { margin-top: 10px; color: var(--dimmer); font-size: 13px; letter-spacing: .01em; }
+body.live .hero, body.chat .hero {
+  opacity: 0; transform: scale(.96); pointer-events: none; position: absolute;
+}
+
+/* suggestion chips on the empty state */
+.chips {
+  margin-top: 30px; display: flex; flex-wrap: wrap; gap: 9px; justify-content: center;
+}
+.chip {
+  padding: 8px 16px; border-radius: 999px; cursor: pointer;
+  background: #101013; border: 1px solid var(--bar-line); color: var(--dim);
+  font: inherit; font-size: 13px; transition: border-color .15s, color .15s, background .15s;
+}
+.chip:hover { border-color: #3b3b45; color: var(--ink); background: #17171a; }
+
+/* ── the orb ───────────────────────────────────────────────────────────────── */
+.orbwrap {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  opacity: 0; transition: opacity .5s ease; pointer-events: none;
+}
+body.live .orbwrap { opacity: 1; }
+
+.orb {
+  position: relative;
+  width: clamp(190px, 30vmin, 300px); aspect-ratio: 1;
+  border-radius: 50%;
+  /* Light pools at the bottom, blue at the top — matches the reference. */
+  background:
+    radial-gradient(120% 100% at 50% 118%, #ffffff 0%, #f2f4ff 26%, #b9c3ff 52%, var(--accent) 82%, #5f6fe8 100%);
+  box-shadow:
+    0 0 60px 6px rgba(124, 140, 255, .30),
+    0 0 180px 40px rgba(124, 140, 255, .13),
+    inset 0 -14px 40px rgba(255, 255, 255, .55);
+  /* --level (0..1) is written from JS on every audio frame. */
+  transform: scale(calc(1 + var(--level, 0) * .13));
+  transition: transform .09s ease-out;
+  will-change: transform;
+}
+/* Slow internal drift so the orb is never completely static while listening. */
+.orb::before {
+  content: ""; position: absolute; inset: -2%;
+  border-radius: 50%;
+  background: radial-gradient(60% 55% at 32% 22%, rgba(255,255,255,.75), transparent 70%);
+  animation: drift 9s ease-in-out infinite alternate;
+  mix-blend-mode: screen;
+}
+@keyframes drift {
+  from { transform: translate3d(-4%, -3%, 0) scale(1); }
+  to   { transform: translate3d(5%, 4%, 0) scale(1.1); }
+}
+/* Halo pulses only while the assistant is speaking. */
+.orb::after {
+  content: ""; position: absolute; inset: -22%;
+  border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, rgba(124,140,255,.24), transparent 62%);
+  transition: opacity .3s;
+}
+body.speaking .orb::after { opacity: 1; animation: halo 2.1s ease-in-out infinite; }
+@keyframes halo {
+  0%, 100% { transform: scale(.94); opacity: .35; }
+  50%      { transform: scale(1.1);  opacity: .8; }
+}
+body.thinking .orb { filter: saturate(.55) brightness(.82); }
+
+.orbstate {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: -46px; white-space: nowrap;
+  font-size: 13px; color: var(--dim); letter-spacing: .02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb, .orb::before, .orb::after { animation: none !important; transition: none !important; }
+}
+
+/* ── captions ──────────────────────────────────────────────────────────────── */
+.captions {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 126px; width: min(760px, calc(100vw - 40px));
+  max-height: 34vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 4px; z-index: 20;
+  scrollbar-width: thin; scrollbar-color: #2a2a2f transparent;
+  mask-image: linear-gradient(transparent, #000 22px);
+}
+.captions::-webkit-scrollbar { width: 5px; }
+.captions::-webkit-scrollbar-thumb { background: #2a2a2f; border-radius: 3px; }
+
+/* In text chat the captions become a full-height, centered conversation column
+   (voice keeps the compact strip under the orb). */
+body.chat:not(.live) .captions {
+  top: 78px; bottom: 122px; max-height: none;
+  width: min(760px, calc(100vw - 32px));
+  gap: 16px; padding: 14px 6px 10px;
+  mask-image: linear-gradient(transparent, #000 30px);
+}
+
+.turn {
+  max-width: 84%; padding: 9px 14px; border-radius: 16px;
+  font-size: 14.5px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  animation: rise .22s ease-out;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.turn.user  { align-self: flex-end; background: #2e3048; border-bottom-right-radius: 5px; }
+.turn.agent { align-self: flex-start; background: var(--bubble); border-bottom-left-radius: 5px;
+              border: 1px solid #202024; }
+
+/* Text-chat column: user stays in a bubble, assistant reads as an open answer. */
+body.chat:not(.live) .turn { font-size: 15px; line-height: 1.65; }
+body.chat:not(.live) .turn.user  { max-width: 72%; padding: 10px 16px; }
+body.chat:not(.live) .turn.agent {
+  max-width: 100%; background: transparent; border: 0; padding: 0 2px;
+}
+
+/* rendered markdown inside assistant turns */
+.turn.md { white-space: normal; }
+.turn.md :is(p, ul, ol, table) { margin: 0 0 10px; }
+.turn.md :is(p, ul, ol, table):last-child { margin-bottom: 0; }
+.turn.md ul, .turn.md ol { padding-left: 22px; }
+.turn.md li { margin: 4px 0; }
+.turn.md li::marker { color: var(--dimmer); }
+.turn.md strong { font-weight: 600; color: #fff; }
+.turn.md a { color: var(--accent); text-decoration: none; }
+.turn.md a:hover { text-decoration: underline; }
+.turn.md code {
+  background: #1e1e23; border: 1px solid #2a2a2f; border-radius: 6px;
+  padding: 1px 6px; font-size: .88em;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.turn.md .hd { font-weight: 600; color: #fff; margin-bottom: 6px; }
+.turn.md .tablewrap { overflow-x: auto; }
+.turn.md table { border-collapse: collapse; font-size: 13.5px; min-width: 60%; }
+.turn.md th, .turn.md td {
+  border: 1px solid #26262b; padding: 7px 12px; text-align: left;
+  white-space: nowrap;
+}
+.turn.md th { background: #1a1a1f; font-weight: 600; color: var(--ink); }
+.turn.md td { color: #d6d6db; }
+.turn.md tr:nth-child(even) td { background: #101013; }
+
+.note {
+  align-self: center; font-size: 12px; color: var(--dimmer);
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 11px; border-radius: 999px; background: #0d0d10;
+  border: 1px solid #1c1c20; max-width: 100%; overflow-wrap: anywhere;
+}
+.note.miss { color: var(--warn); border-color: #33261a; }
+.note .spin {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  border: 1.5px solid #333; border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── composer ──────────────────────────────────────────────────────────────── */
+.composer {
+  position: fixed; inset: auto 0 0 0; z-index: 30;
+  padding: 16px 20px 22px;
+  background: linear-gradient(transparent, #000 42%);
+  display: flex; justify-content: center;
+}
+.bar {
+  display: flex; align-items: center; gap: 8px;
+  width: min(760px, 100%);
+  background: var(--bar); border: 1px solid var(--bar-line);
+  border-radius: 999px; padding: 7px 8px 7px 6px;
+  transition: border-color .18s, box-shadow .18s;
+}
+.bar:focus-within { border-color: #3b3b45; box-shadow: 0 0 0 4px rgba(124,140,255,.09); }
+
+.bar input {
+  flex: 1 1 auto; min-width: 0;
+  font: inherit; font-size: 15px;
+  background: none; border: 0; outline: 0; color: var(--ink);
+  padding: 8px 2px;
+}
+.bar input::placeholder { color: var(--dimmer); }
+
+.round {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: transparent; border: 0; color: var(--dim);
+  transition: background .15s, color .15s, transform .1s;
+}
+.round:hover:not(:disabled) { background: #26262b; color: var(--ink); }
+.round:active:not(:disabled) { transform: scale(.94); }
+.round:disabled { opacity: .35; cursor: not-allowed; }
+.round svg { width: 19px; height: 19px; }
+
+.round.solid { background: #ececf1; color: #101013; }
+.round.solid:hover:not(:disabled) { background: #fff; }
+
+/* tooltip on the primary action */
+.tipwrap { position: relative; flex: none; }
+.tip {
+  position: absolute; bottom: calc(100% + 10px); right: 0;
+  padding: 6px 11px; border-radius: 9px; white-space: nowrap;
+  background: #232327; color: var(--ink); font-size: 12.5px; font-weight: 500;
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+.tip kbd {
+  font: inherit; color: var(--dim); margin-left: 6px;
+  background: none; border: 0;
+}
+.tipwrap:hover .tip { opacity: 1; }
+
+.footnote {
+  position: fixed; bottom: 4px; left: 0; right: 0; z-index: 25;
+  text-align: center; font-size: 10.5px; color: #3a3a40;
+  padding: 0 20px; pointer-events: none;
+}
+
+/* ── transcript drawer (desktop side panel) ────────────────────────────────── */
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 86vw);
+  background: #08080a; border-left: 1px solid #17171b; z-index: 40;
+  transform: translateX(101%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+body.drawer-open .drawer { transform: none; }
+.drawer header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 18px; border-bottom: 1px solid #17171b;
+  font-size: 13px; font-weight: 600;
+}
+.drawer .body { flex: 1 1 auto; overflow-y: auto; padding: 14px 18px; font-size: 12.5px; }
+.drawer .kv { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--dim); }
+.drawer .kv b { color: var(--ink); font-weight: 600; }
+.drawer h4 { margin: 18px 0 6px; font-size: 11px; text-transform: uppercase;
+             letter-spacing: .08em; color: var(--dimmer); }
+.drawer .toolrow { padding: 6px 0; border-bottom: 1px solid #131317; color: var(--dim); }
+.drawer .toolrow code { color: var(--accent-2); font-size: 11.5px; }
+
+/* ── history panel (left) ──────────────────────────────────────────────────── */
+.history {
+  position: fixed; top: 0; left: 0; bottom: 0; width: min(330px, 86vw);
+  background: #08080a; border-right: 1px solid #17171b; z-index: 41;
+  transform: translateX(-101%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+body.history-open .history { transform: none; }
+.history header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px 14px 14px 18px; border-bottom: 1px solid #17171b;
+  font-size: 13px; font-weight: 600;
+}
+.history .list { flex: 1 1 auto; overflow-y: auto; padding: 8px; }
+.newchat {
+  margin: 10px 12px; padding: 9px 14px; border-radius: 10px;
+  background: #17171a; border: 1px solid var(--bar-line); color: var(--ink);
+  font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; width: calc(100% - 24px);
+}
+.newchat:hover { background: #1f1f24; }
+.newchat svg { width: 15px; height: 15px; }
+
+.conv {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 12px; margin-bottom: 3px; border-radius: 10px;
+  background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer;
+  position: relative;
+}
+.conv:hover { background: #131317; }
+.conv.active { background: #191920; }
+.conv .t {
+  font-size: 13.5px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; padding-right: 22px;
+}
+.conv .m { font-size: 11.5px; color: var(--dimmer); margin-top: 2px; }
+.conv .m .tag {
+  display: inline-block; padding: 0 5px; border-radius: 4px;
+  background: #1e1e24; color: var(--dim); margin-right: 6px;
+}
+.conv .del {
+  position: absolute; top: 8px; right: 6px; width: 22px; height: 22px;
+  border-radius: 6px; border: 0; background: none; color: var(--dimmer);
+  cursor: pointer; opacity: 0; display: grid; place-items: center;
+}
+.conv:hover .del { opacity: 1; }
+.conv .del:hover { background: #2a1f1f; color: var(--warn); }
+.conv .del svg { width: 13px; height: 13px; }
+.empty-hist { padding: 18px; color: var(--dimmer); font-size: 12.5px; }
+
+.resumed {
+  align-self: center; margin: 2px 0 6px; font-size: 11.5px; color: var(--dimmer);
+  display: flex; align-items: center; gap: 8px; width: 100%;
+}
+.resumed::before, .resumed::after {
+  content: ""; flex: 1 1 auto; height: 1px; background: #1c1c20;
+}
+
+@media (max-width: 560px) {
+  .topbar { padding: 14px 16px; }
+  .mark small { display: none; }
+  .captions { bottom: 112px; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="mark">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2 3 6.5v5C3 17 6.9 21.3 12 22.5c5.1-1.2 9-5.5 9-11v-5L12 2Z"
+            stroke="#7c8cff" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M8.5 12.2h3.2a2.1 2.1 0 0 0 0-4.2H8.5v8.4m3 -4.2 2.6 4.2"
+            stroke="#e8ecff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span>Riphah International University<small>Admissions &amp; programs assistant</small></span>
+  </div>
+  <div class="grow"></div>
+  <div class="pill" id="kbPill"><i class="dot"></i><span id="kbText">checking…</span></div>
+  <button class="iconbtn" id="historyBtn" title="Conversation history" aria-label="History">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 8v4l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5V9H8" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <button class="iconbtn" id="drawerBtn" title="Knowledge base &amp; tool activity" aria-label="Details">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<div class="stage">
+  <div class="hero" id="hero">
+    <h1>How can I help with Riphah?</h1>
+    <p>Ask about admissions, fee structures, programs, eligibility or campuses.</p>
+    <div class="langs">English · اردو · پښتو · پنجابی · العربية</div>
+    <div class="chips" id="chips">
+      <button class="chip">MBBS fee structure</button>
+      <button class="chip">Programs offered in Lahore</button>
+      <button class="chip">BS Computer Science eligibility</button>
+      <button class="chip">Admission deadlines</button>
+    </div>
+  </div>
+
+  <div class="orbwrap" id="orbwrap">
+    <div class="orb" id="orb"></div>
+    <div class="orbstate" id="orbstate">connecting…</div>
+  </div>
+</div>
+
+<div class="captions" id="captions"></div>
+
+<form class="composer" id="composer">
+  <div class="bar">
+    <button type="button" class="round" id="plusBtn" title="Clear conversation" aria-label="Clear">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14"
+        stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+    </button>
+    <input id="textInput" placeholder="Ask anything" autocomplete="off" enterkeyhint="send">
+    <button type="submit" class="round" id="sendBtn" title="Send" aria-label="Send">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 19V5m0 0-6 6m6-6 6 6"
+        stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="tipwrap">
+      <button type="button" class="round solid" id="voiceBtn" aria-label="Start voice">
+        <svg id="voiceIcon" viewBox="0 0 24 24" fill="none">
+          <path d="M5 10v4M9 6.5v11M13 8.5v7M17 11v2" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="tip" id="voiceTip">Start voice <kbd>⌃⇧V</kbd></div>
+    </div>
+  </div>
+</form>
+
+<div class="footnote" id="footnote">
+  Answers come from riphah.edu.pk. Fee figures are first-semester and may be revised —
+  confirm with the admissions office.
+</div>
+
+<aside class="history" id="history">
+  <header>
+    <span>Conversations</span><div class="grow"></div>
+    <button class="iconbtn" id="historyClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+  <button class="newchat" id="newChatBtn">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    New conversation
+  </button>
+  <div class="list" id="convList"></div>
+</aside>
+
+<aside class="drawer" id="drawer">
+  <header>
+    <span>Session details</span><div class="grow"></div>
+    <button class="iconbtn" id="drawerClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+  <div class="body">
+    <h4>Knowledge base</h4>
+    <div id="kbStats"></div>
+    <h4>Models</h4>
+    <div id="modelStats"></div>
+    <h4>Tool activity</h4>
+    <div id="toolLog"><div class="toolrow">No lookups yet.</div></div>
+  </div>
+</aside>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const captions = $('captions');
+
+/* ── per-user identity ─────────────────────────────────────────────────────────
+   Every browser gets a stable random id; the server scopes all conversations to
+   it, so nobody can list or open anyone else's history. Sent on every API call.
+   If the server is deployed with API_KEYS set, it answers 401 until the page
+   also sends a developer key — we ask for it once and remember it.
+   ──────────────────────────────────────────────────────────────────────────── */
+const USER_KEY = 'riphah.user';
+let userId = localStorage.getItem(USER_KEY);
+if (!userId) {
+  userId = (crypto.randomUUID ? crypto.randomUUID()
+            : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  localStorage.setItem(USER_KEY, userId);
+}
+const APIKEY_KEY = 'riphah.apikey';
+const _fetch = window.fetch.bind(window);
+window.fetch = async (url, opts = {}) => {
+  const isApi = typeof url === 'string' && url.startsWith('/api/');
+  if (isApi) {
+    opts.headers = Object.assign({}, opts.headers, { 'X-User-Id': userId });
+    const key = localStorage.getItem(APIKEY_KEY);
+    if (key) opts.headers['X-API-Key'] = key;
+  }
+  let res = await _fetch(url, opts);
+  if (isApi && res.status === 401) {
+    const entered = prompt('This server requires an API key. Enter it to continue:');
+    if (entered) {
+      localStorage.setItem(APIKEY_KEY, entered.trim());
+      opts.headers['X-API-Key'] = entered.trim();
+      res = await _fetch(url, opts);
+    }
+  }
+  return res;
+};
+
+let pc = null, dc = null, micStream = null, audioEl = null;
+let audioCtx = null, micAnalyser = null, outAnalyser = null, rafId = null;
+let live = false;
+const agentBuffers = new Map();   // response_id -> {node, text}
+
+/* ── conversation session ─────────────────────────────────────────────────────
+   The id lives in localStorage so a reload rejoins the same thread. It's only a
+   pointer — the turns themselves are on the server, which is what makes a
+   dropped call recoverable (the Realtime API keeps no state across connections).
+   ──────────────────────────────────────────────────────────────────────────── */
+const CONV_KEY = 'riphah.conversation';
+let conversationId = localStorage.getItem(CONV_KEY) || null;
+
+function setConversation(id) {
+  conversationId = id || null;
+  if (id) localStorage.setItem(CONV_KEY, id); else localStorage.removeItem(CONV_KEY);
+  document.querySelectorAll('.conv').forEach((el) =>
+    el.classList.toggle('active', el.dataset.id === id));
+}
+
+// Turns are queued and flushed on a short timer: voice produces them in bursts
+// (transcript, tool call, reply) and one POST per burst beats one per turn.
+let pendingTurns = [];
+let flushTimer = null;
+
+function recordTurn(turn) {
+  if (!conversationId) return;
+  pendingTurns.push(turn);
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushTurns, 600);
+}
+
+async function flushTurns() {
+  if (!conversationId || !pendingTurns.length) return;
+  const batch = pendingTurns;
+  pendingTurns = [];
+  try {
+    await fetch(`/api/conversations/${conversationId}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ turns: batch }),
+      keepalive: true,      // survives a tab close mid-flush
+    });
+  } catch {
+    pendingTurns = batch.concat(pendingTurns);   // retry on the next flush
+  }
+  loadHistory();
+}
+
+/* ── state helpers ────────────────────────────────────────────────────────── */
+function setPhase(phase, label) {
+  document.body.classList.toggle('speaking', phase === 'speaking');
+  document.body.classList.toggle('thinking', phase === 'thinking');
+  if (label) $('orbstate').textContent = label;
+}
+
+// The hero yields to the conversation column once there is anything to show.
+function updateChatMode() {
+  document.body.classList.toggle('chat', captions.children.length > 0);
+}
+
+function addTurn(who, text) {
+  const el = document.createElement('div');
+  el.className = `turn ${who}`;
+  el.textContent = text;
+  captions.appendChild(el);
+  updateChatMode();
+  captions.scrollTop = captions.scrollHeight;
+  return el;
+}
+
+/* ── minimal markdown (agent answers carry tables, bold, lists, links) ──────
+   Input is HTML-escaped first, so the model's output can never inject markup. */
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function mdInline(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\s][^*]*)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function renderMarkdown(src) {
+  const lines = escHtml(src || '').split('\n');
+  let html = '', i = 0, para = [];
+  const flush = () => {
+    if (para.length) { html += `<p>${mdInline(para.join('<br>'))}</p>`; para = []; }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*\|.*\|\s*$/.test(line)) {                       // table block
+      flush();
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++].trim());
+      const cells = (r) => r.slice(1, -1).split('|').map((c) => mdInline(c.trim()));
+      const body = rows.filter((r) => !/^\|[\s:|-]+\|$/.test(r));
+      let t = '<div class="tablewrap"><table>';
+      body.forEach((r, n) => {
+        const tag = n === 0 ? 'th' : 'td';
+        t += '<tr>' + cells(r).map((c) => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+      });
+      html += t + '</table></div>';
+      continue;
+    }
+    if (/^\s*#{1,4}\s+/.test(line)) {                        // heading
+      flush();
+      html += `<p class="hd">${mdInline(line.replace(/^\s*#{1,4}\s+/, ''))}</p>`;
+      i++; continue;
+    }
+    if (/^\s*([-*•]|\d+\.)\s+/.test(line)) {                 // list block
+      flush();
+      const ordered = /^\s*\d+\./.test(line);
+      const items = [];
+      while (i < lines.length && /^\s*([-*•]|\d+\.)\s+/.test(lines[i]))
+        items.push(`<li>${mdInline(lines[i++].replace(/^\s*([-*•]|\d+\.)\s+/, ''))}</li>`);
+      html += ordered ? `<ol>${items.join('')}</ol>` : `<ul>${items.join('')}</ul>`;
+      continue;
+    }
+    if (!line.trim()) { flush(); i++; continue; }
+    para.push(line); i++;
+  }
+  flush();
+  return html;
+}
+
+function setAgentMarkdown(node, text) {
+  node.classList.add('md');
+  node.innerHTML = renderMarkdown(text);
+  captions.scrollTop = captions.scrollHeight;
+}
+
+function addNote(text, { miss = false, busy = false } = {}) {
+  const el = document.createElement('div');
+  el.className = 'note' + (miss ? ' miss' : '');
+  if (busy) el.innerHTML = '<i class="spin"></i>';
+  el.appendChild(document.createTextNode(text));
+  captions.appendChild(el);
+  updateChatMode();
+  captions.scrollTop = captions.scrollHeight;
+  return el;
+}
+
+function logTool(name, detail, found) {
+  const log = $('toolLog');
+  if (log.dataset.empty !== '1') { log.innerHTML = ''; log.dataset.empty = '1'; }
+  const row = document.createElement('div');
+  row.className = 'toolrow';
+  row.innerHTML = `<code>${name}</code> ${detail ? '· ' + detail : ''}` +
+                  (found === false ? ' · <span style="color:var(--warn)">no match</span>' : '');
+  log.prepend(row);
+}
+
+/* ── health ───────────────────────────────────────────────────────────────── */
+async function checkHealth() {
+  try {
+    const h = await (await fetch('/api/health')).json();
+    const kb = h.knowledge_base || {};
+    $('kbText').textContent = h.ready
+      ? `${(kb.chunks_embedded || 0).toLocaleString()} passages · ${kb.fees} fees · ${kb.programs} programs`
+      : (h.hint || 'knowledge base not built');
+    $('kbPill').classList.toggle('bad', !h.ready);
+
+    $('kbStats').innerHTML = Object.entries(kb)
+      .map(([k, v]) => `<div class="kv"><span>${k.replace(/_/g, ' ')}</span><b>${v.toLocaleString()}</b></div>`)
+      .join('');
+    $('modelStats').innerHTML = Object.entries(h.models || {})
+      .map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join('') +
+      `<div class="kv"><span>openai key</span><b>${h.keys_present?.openai ? 'set' : 'missing'}</b></div>` +
+      `<div class="kv"><span>anthropic key</span><b>${h.keys_present?.anthropic ? 'set' : 'missing'}</b></div>`;
+
+    if (!h.keys_present?.openai) {
+      $('voiceBtn').disabled = true;
+      $('voiceTip').textContent = 'OPENAI_API_KEY not set on the server';
+    }
+    if (h.text_chat_ready === false) {
+      $('sendBtn').disabled = true;
+      $('sendBtn').title = 'Text chat is not configured on the server';
+    }
+  } catch {
+    $('kbText').textContent = 'server unreachable';
+    $('kbPill').classList.add('bad');
+  }
+}
+
+/* ── history panel ────────────────────────────────────────────────────────── */
+function relativeTime(iso) {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+async function loadHistory() {
+  try {
+    const { conversations: list } = await (await fetch('/api/conversations?limit=40')).json();
+    const box = $('convList');
+    if (!list.length) {
+      box.innerHTML = '<div class="empty-hist">No conversations yet.</div>';
+      return;
+    }
+    box.innerHTML = '';
+    for (const c of list) {
+      const btn = document.createElement('button');
+      btn.className = 'conv' + (c.id === conversationId ? ' active' : '');
+      btn.dataset.id = c.id;
+      const turns = `${c.turn_count} turn${c.turn_count === 1 ? '' : 's'}`;
+      btn.innerHTML =
+        `<div class="t">${(c.title || 'Untitled').replace(/[<>&]/g, '')}</div>` +
+        `<div class="m"><span class="tag">${c.mode}</span>${turns} · ${relativeTime(c.updated_at)}</div>` +
+        `<button class="del" title="Delete" aria-label="Delete conversation">` +
+        `<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" ` +
+        `stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>`;
+      btn.addEventListener('click', (ev) => {
+        if (ev.target.closest('.del')) return;
+        openConversation(c.id);
+      });
+      btn.querySelector('.del').addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await fetch(`/api/conversations/${c.id}`, { method: 'DELETE' });
+        if (c.id === conversationId) { setConversation(null); captions.innerHTML = ''; updateChatMode(); }
+        loadHistory();
+      });
+      box.appendChild(btn);
+    }
+  } catch { /* panel is non-critical */ }
+}
+
+function renderStoredMessages(messages) {
+  captions.innerHTML = '';
+  for (const m of messages) {
+    if (m.role === 'tool') {
+      let detail = '';
+      try {
+        const args = JSON.parse(m.tool_input || '{}');
+        detail = args.program || args.query || args.campus || args.level || '';
+      } catch { /* ignore */ }
+      const label = (m.tool_name || 'lookup').replace(/^get_|^search_|^list_/, '').replace(/_/g, ' ');
+      addNote(`${label}${detail ? ': ' + detail : ''}`, { miss: m.tool_found === 0 });
+    } else if (m.content) {
+      const node = addTurn(m.role === 'user' ? 'user' : 'agent', m.content);
+      if (m.role === 'assistant') setAgentMarkdown(node, m.content);
+    }
+  }
+  updateChatMode();
+}
+
+async function openConversation(id) {
+  try {
+    const data = await (await fetch(`/api/conversations/${id}`)).json();
+    setConversation(id);
+    renderStoredMessages(data.messages || []);
+    document.body.classList.remove('history-open');
+    $('historyBtn').classList.remove('on');
+    if (data.messages?.length) {
+      const mark = document.createElement('div');
+      mark.className = 'resumed';
+      mark.textContent = 'resumed';
+      captions.appendChild(mark);
+      captions.scrollTop = captions.scrollHeight;
+    }
+  } catch { /* ignore */ }
+}
+
+async function restoreSession() {
+  if (!conversationId) return;
+  try {
+    const res = await fetch(`/api/conversations/${conversationId}`);
+    if (!res.ok) { setConversation(null); return; }   // deleted server-side
+    const data = await res.json();
+    if (data.messages?.length) {
+      renderStoredMessages(data.messages);
+      const mark = document.createElement('div');
+      mark.className = 'resumed';
+      mark.textContent = 'earlier in this conversation';
+      captions.appendChild(mark);
+    }
+  } catch { /* offline; keep the id and try again later */ }
+}
+
+async function newConversation() {
+  await flushTurns();
+  try {
+    const s = await (await fetch('/api/conversations?mode=text', { method: 'POST' })).json();
+    setConversation(s.id);
+  } catch {
+    setConversation(null);
+  }
+  captions.innerHTML = '';
+  updateChatMode();
+  document.body.classList.remove('history-open');
+  $('historyBtn').classList.remove('on');
+  loadHistory();
+  $('textInput').focus();
+}
+
+/* ── audio-reactive orb ───────────────────────────────────────────────────── */
+function attachAnalyser(stream) {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  const node = audioCtx.createAnalyser();
+  node.fftSize = 256;
+  node.smoothingTimeConstant = 0.75;
+  audioCtx.createMediaStreamSource(stream).connect(node);
+  return node;
+}
+
+function startOrbLoop() {
+  const buf = new Uint8Array(128);
+  const read = (node) => {
+    if (!node) return 0;
+    node.getByteFrequencyData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i];
+    return sum / buf.length / 255;          // 0..1
+  };
+  const tick = () => {
+    // The assistant's voice drives the orb when it's talking; otherwise the mic
+    // does, so the orb always reflects whoever currently holds the floor.
+    const out = read(outAnalyser), mic = read(micAnalyser);
+    const level = Math.min(1, Math.max(out * 2.6, mic * 1.9));
+    $('orb').style.setProperty('--level', level.toFixed(3));
+    rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function stopOrbLoop() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  $('orb').style.setProperty('--level', 0);
+}
+
+/* ── tool bridge ──────────────────────────────────────────────────────────── */
+// Function calls land in the browser because WebRTC connects the browser
+// straight to OpenAI. The browser holds no database and no API key, so it
+// relays each call to our server and returns the result over the data channel.
+async function handleFunctionCall(call) {
+  let args = {};
+  try { args = JSON.parse(call.arguments || '{}'); } catch { /* keep {} */ }
+  const label = call.name.replace(/^get_|^search_|^list_/, '').replace(/_/g, ' ');
+  const detail = args.program || args.query || args.campus || args.faculty || args.level || '';
+
+  const note = addNote(`${label}${detail ? ': ' + detail : ''}`, { busy: true });
+
+  let result;
+  try {
+    const res = await fetch(`/api/tools/${call.name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ arguments: args }),
+    });
+    result = await res.json();
+  } catch (err) {
+    result = { error: String(err) };
+  }
+
+  note.querySelector('.spin')?.remove();
+  if (result.found === false) note.classList.add('miss');
+  logTool(call.name, detail, result.found);
+  recordTurn({
+    role: 'tool', channel: 'voice', tool_name: call.name,
+    tool_input: args, tool_found: result.found === undefined ? null : !!result.found,
+  });
+
+  dc.send(JSON.stringify({
+    type: 'conversation.item.create',
+    item: { type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(result) },
+  }));
+  // A tool result alone doesn't resume generation — ask for the next response.
+  dc.send(JSON.stringify({ type: 'response.create' }));
+}
+
+/* ── realtime events ──────────────────────────────────────────────────────── */
+function handleServerEvent(ev) {
+  switch (ev.type) {
+    case 'conversation.item.input_audio_transcription.completed':
+      if (ev.transcript?.trim()) {
+        const said = ev.transcript.trim();
+        addTurn('user', said);
+        recordTurn({ role: 'user', content: said, channel: 'voice' });
+      }
+      break;
+
+    case 'response.output_audio_transcript.delta':
+    case 'response.audio_transcript.delta': {
+      const key = ev.response_id || 'current';
+      if (!agentBuffers.has(key)) agentBuffers.set(key, { node: addTurn('agent', ''), text: '' });
+      const b = agentBuffers.get(key);
+      b.text += ev.delta || '';
+      b.node.textContent = b.text;
+      captions.scrollTop = captions.scrollHeight;
+      break;
+    }
+
+    case 'response.done': {
+      const key = ev.response?.id || 'current';
+      // Persist the assistant's turn now that it's complete — the buffered text
+      // is the full utterance, whereas the deltas are partial by definition.
+      const said = agentBuffers.get(key)?.text?.trim();
+      if (said) recordTurn({ role: 'assistant', content: said, channel: 'voice' });
+      agentBuffers.delete(key);
+
+      setPhase('listening', 'listening');
+      for (const item of ev.response?.output || []) {
+        if (item.type === 'function_call') handleFunctionCall(item);
+      }
+      break;
+    }
+
+    case 'input_audio_buffer.speech_started': setPhase('listening', 'listening'); break;
+    case 'input_audio_buffer.speech_stopped': setPhase('thinking', 'thinking'); break;
+    case 'response.created':                  setPhase('speaking', 'speaking'); break;
+
+    case 'error':
+      setPhase('idle', 'error');
+      addNote(ev.error?.message || JSON.stringify(ev.error), { miss: true });
+      break;
+  }
+}
+
+/* ── call lifecycle ───────────────────────────────────────────────────────── */
+async function startCall() {
+  $('voiceBtn').disabled = true;
+  document.body.classList.add('live');
+  live = true;
+  setPhase('thinking', 'requesting microphone…');
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch {
+    addNote('microphone permission denied', { miss: true });
+    return endCall();
+  }
+  micAnalyser = attachAnalyser(micStream);
+  startOrbLoop();
+
+  setPhase('thinking', 'opening session…');
+  let session;
+  try {
+    const res = await fetch('/api/realtime/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Passing the id resumes the thread: the server replays prior turns into
+      // the new session's instructions, since Realtime keeps no state itself.
+      body: JSON.stringify({ conversation_id: conversationId }),
+    });
+    if (!res.ok) throw new Error((await res.text()).slice(0, 300));
+    session = await res.json();
+    setConversation(session.conversation_id);
+    if (session.resumed) addNote('resuming earlier conversation');
+    loadHistory();
+  } catch (err) {
+    addNote(String(err.message || err), { miss: true });
+    return endCall();
+  }
+
+  pc = new RTCPeerConnection();
+
+  audioEl = document.createElement('audio');
+  audioEl.autoplay = true;
+  pc.ontrack = (ev) => {
+    audioEl.srcObject = ev.streams[0];
+    outAnalyser = attachAnalyser(ev.streams[0]);
+  };
+
+  micStream.getTracks().forEach((t) => pc.addTrack(t, micStream));
+
+  dc = pc.createDataChannel('oai-events');
+  dc.onmessage = (ev) => { try { handleServerEvent(JSON.parse(ev.data)); } catch { /* ignore */ } };
+  dc.onopen = () => {
+    setPhase('listening', 'listening — say hello');
+    // Session config (instructions, tools, voice) is set server-side when the
+    // token is minted; the client only nudges the opening turn.
+    dc.send(JSON.stringify({ type: 'response.create' }));
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const answer = await fetch(`${session.sdp_url}?model=${encodeURIComponent(session.model)}`, {
+    method: 'POST',
+    body: offer.sdp,
+    headers: { Authorization: `Bearer ${session.client_secret}`, 'Content-Type': 'application/sdp' },
+  });
+  if (!answer.ok) {
+    addNote(`handshake failed: ${(await answer.text()).slice(0, 220)}`, { miss: true });
+    return endCall();
+  }
+  await pc.setRemoteDescription({ type: 'answer', sdp: await answer.text() });
+
+  swapVoiceIcon(true);
+  $('voiceBtn').disabled = false;
+}
+
+function endCall() {
+  live = false;
+  stopOrbLoop();
+  micStream?.getTracks().forEach((t) => t.stop());
+  try { dc?.close(); pc?.close(); } catch { /* already closed */ }
+  pc = dc = micStream = null;
+  micAnalyser = outAnalyser = null;
+  agentBuffers.clear();
+  document.body.classList.remove('live', 'speaking', 'thinking');
+  swapVoiceIcon(false);
+  $('voiceBtn').disabled = false;
+}
+
+function swapVoiceIcon(active) {
+  $('voiceIcon').innerHTML = active
+    ? '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    : '<path d="M5 10v4M9 6.5v11M13 8.5v7M17 11v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+  $('voiceBtn').setAttribute('aria-label', active ? 'End voice' : 'Start voice');
+  $('voiceTip').innerHTML = active ? 'End voice <kbd>⌃⇧V</kbd>' : 'Start voice <kbd>⌃⇧V</kbd>';
+}
+
+/* ── text mode ────────────────────────────────────────────────────────────── */
+$('composer').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const input = $('textInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  addTurn('user', q);
+
+  const node = addTurn('agent', '');
+  const busy = addNote('thinking', { busy: true });
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // Sending the id is what makes follow-ups work ("and at Lahore?"): the
+      // server loads the stored history rather than treating each message as new.
+      body: JSON.stringify({ message: q, conversation_id: conversationId }),
+    });
+    const data = await res.json();
+    busy.remove();
+    if (!res.ok) {
+      // 503 here means the Claude spend cap, not a crash. Voice is a separate
+      // provider and still works, so say that rather than showing a dead end.
+      node.remove();
+      addNote(data.detail || `text chat unavailable (HTTP ${res.status})`, { miss: true });
+      return;
+    }
+    setAgentMarkdown(node, data.answer || data.detail || 'No answer returned.');
+    if (data.conversation_id) setConversation(data.conversation_id);
+    for (const step of data.trace || []) {
+      logTool(step.tool, JSON.stringify(step.input).slice(0, 60), step.found);
+      if (step.found === false) addNote(`${step.tool}: no match`, { miss: true });
+    }
+    loadHistory();
+  } catch (err) {
+    busy.remove();
+    node.textContent = `Error: ${err}`;
+  }
+});
+
+/* ── wiring ───────────────────────────────────────────────────────────────── */
+$('chips').addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip');
+  if (!chip) return;
+  $('textInput').value = chip.textContent;
+  $('composer').requestSubmit();
+});
+$('voiceBtn').addEventListener('click', () => (live ? endCall() : startCall()));
+$('plusBtn').addEventListener('click', newConversation);
+$('newChatBtn').addEventListener('click', newConversation);
+$('historyBtn').addEventListener('click', () => {
+  const opening = !document.body.classList.contains('history-open');
+  document.body.classList.toggle('history-open', opening);
+  $('historyBtn').classList.toggle('on', opening);
+  if (opening) loadHistory();
+});
+$('historyClose').addEventListener('click', () => {
+  document.body.classList.remove('history-open');
+  $('historyBtn').classList.remove('on');
+});
+$('drawerBtn').addEventListener('click', () => {
+  document.body.classList.toggle('drawer-open');
+  $('drawerBtn').classList.toggle('on');
+});
+$('drawerClose').addEventListener('click', () => {
+  document.body.classList.remove('drawer-open');
+  $('drawerBtn').classList.remove('on');
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.ctrlKey && ev.shiftKey && ev.key.toLowerCase() === 'v') {
+    ev.preventDefault();
+    live ? endCall() : startCall();
+  }
+  if (ev.key === 'Escape') {
+    if (document.body.classList.contains('history-open')) {
+      document.body.classList.remove('history-open');
+      $('historyBtn').classList.remove('on');
+    } else if (document.body.classList.contains('drawer-open')) {
+      document.body.classList.remove('drawer-open');
+      $('drawerBtn').classList.remove('on');
+    } else if (live) endCall();
+  }
+});
+
+// Flush before the tab goes away, so a closed window doesn't lose the last turn.
+window.addEventListener('pagehide', () => { flushTurns(); if (live) endCall(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushTurns();
+});
+
+checkHealth();
+setInterval(checkHealth, 30000);
+restoreSession();
+loadHistory();
+</script>
+</body>
+</html>

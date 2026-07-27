@@ -1,0 +1,22 @@
+# secrets
+.env
+env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# knowledge base + scraped cache (rebuild with: python -m kb.build)
+data/kb.sqlite3
+data/kb.sqlite3-shm
+data/kb.sqlite3-wal
+data/raw/
+data/logs/
+
+# eval output
+eval/results*.json
+
+# os
+.DS_Store
