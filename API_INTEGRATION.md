@@ -25,6 +25,15 @@ bot host to be HTTPS.
 
 Use the REST APIs below only if you want to build a fully custom chat UI.
 
+> **If the bot host is on a private network** (e.g. it resolves to a 172.x/10.x
+> address), a `<script src>` tag can stall the host page's load behind Chrome's
+> "local network access" permission prompt. In that case use the **inline
+> launcher snippet** instead — it renders the chat icon with no network request
+> and only contacts the bot when a visitor clicks, so the page never blocks and
+> most visitors never see a prompt. The snippet is in
+> [`frontend/inline-snippet.html`](frontend/inline-snippet.html) — copy its
+> contents before `</body>` and set the `BOT` constant to your bot host.
+
 ---
 
 ## Required headers on every request
