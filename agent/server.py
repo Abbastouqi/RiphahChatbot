@@ -180,7 +180,19 @@ async def realtime_session(payload: SessionRequest | None = None,
                 # Transcription gives us the caller's words for the on-screen
                 # transcript and the query log. Omitting `language` is deliberate:
                 # pinning it would break mid-call language switching.
-                "transcription": {"model": "whisper-1"},
+                # gpt-4o-mini-transcribe (vs whisper-1): far fewer wrong-script
+                # errors on Urdu, and the prompt keeps captions in Roman script.
+                "transcription": {
+                    "model": "gpt-4o-mini-transcribe",
+                    "prompt": (
+                        "Admissions call for Riphah International University, "
+                        "Pakistan. Speakers use English, Urdu, Punjabi or Pashto, "
+                        "often mixed. Write Urdu/Punjabi/Pashto in Roman (Latin) "
+                        "script — e.g. 'MBBS ki fee kitni hai'. Keep program and "
+                        "campus names in English (MBBS, BSSE, BS Computer Science, "
+                        "I-14, Al-Mizan, Gulberg Green)."
+                    ),
+                },
                 "turn_detection": {"type": "semantic_vad"},
             },
             "output": {"voice": payload.voice or config.REALTIME_VOICE},
