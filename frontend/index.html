@@ -275,6 +275,19 @@ body.chat:not(.live) .turn.agent {
 .round.solid { background: #ececf1; color: #101013; }
 .round.solid:hover:not(:disabled) { background: #fff; }
 
+/* During a voice call the composer's input yields to one clear action:
+   switching back to text. The mic button (now ✕) still ends the call. */
+.switchchat {
+  display: none; flex: 1 1 auto; align-items: center; justify-content: center;
+  gap: 9px; padding: 9px 0; border: 0; cursor: pointer; border-radius: 999px;
+  background: transparent; color: var(--dim); font: inherit; font-size: 14px;
+  transition: color .15s, background .15s;
+}
+.switchchat:hover { color: var(--ink); background: #1f1f24; }
+.switchchat svg { width: 18px; height: 18px; }
+body.live .bar input, body.live #sendBtn, body.live #plusBtn { display: none; }
+body.live .switchchat { display: flex; }
+
 /* tooltip on the primary action */
 .tipwrap { position: relative; flex: none; }
 .tip {
@@ -434,6 +447,12 @@ body.history-open .history { transform: none; }
     <button type="button" class="round" id="plusBtn" title="Clear conversation" aria-label="Clear">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14"
         stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+    </button>
+    <button type="button" class="switchchat" id="switchChatBtn">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2.5"
+        stroke="currentColor" stroke-width="1.7"/><path d="M7 15h10M7 9.5h.01M10.5 9.5h.01M14 9.5h.01M17 9.5h.01M7 12.2h.01M10.5 12.2h.01M14 12.2h.01M17 12.2h.01"
+        stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      Switch to text chat
     </button>
     <input id="textInput" placeholder="Ask anything" autocomplete="off" enterkeyhint="send">
     <button type="submit" class="round" id="sendBtn" title="Send" aria-label="Send">
@@ -1145,6 +1164,10 @@ $('chips').addEventListener('click', (ev) => {
   $('composer').requestSubmit();
 });
 $('voiceBtn').addEventListener('click', () => (live ? endCall() : startCall()));
+$('switchChatBtn').addEventListener('click', () => {
+  endCall();                    // same conversation continues — history is shared
+  $('textInput').focus();
+});
 $('plusBtn').addEventListener('click', newConversation);
 $('newChatBtn').addEventListener('click', newConversation);
 $('historyBtn').addEventListener('click', () => {
