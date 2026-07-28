@@ -1063,31 +1063,62 @@ $('composer').addEventListener('submit', async (ev) => {
 
   const node = addTurn('agent', '');
   const busy = addNote('thinking', { busy: true });
+  let busyGone = false;
+  const clearBusy = () => { if (!busyGone) { busy.remove(); busyGone = true; } };
   try {
-    const res = await fetch('/api/chat', {
+    const res = await fetch('/api/chat/stream', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       // Sending the id is what makes follow-ups work ("and at Lahore?"): the
       // server loads the stored history rather than treating each message as new.
       body: JSON.stringify({ message: q, conversation_id: conversationId }),
     });
-    const data = await res.json();
-    busy.remove();
-    if (!res.ok) {
-      // 503 here means the Claude spend cap, not a crash. Voice is a separate
-      // provider and still works, so say that rather than showing a dead end.
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      clearBusy();
       node.remove();
       addNote(data.detail || `text chat unavailable (HTTP ${res.status})`, { miss: true });
       return;
     }
-    setAgentMarkdown(node, data.answer || data.detail || 'No answer returned.');
-    if (data.conversation_id) setConversation(data.conversation_id);
-    for (const step of data.trace || []) {
-      logTool(step.tool, JSON.stringify(step.input).slice(0, 60), step.found);
-      if (step.found === false) addNote(`${step.tool}: no match`, { miss: true });
+
+    // Read the SSE stream: plain text while it types, markdown once complete.
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', streamed = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, cut).trim();
+        buf = buf.slice(cut + 2);
+        if (!line.startsWith('data:')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+
+        if (ev.type === 'delta') {
+          clearBusy();
+          streamed += ev.text;
+          node.textContent = streamed;
+          captions.scrollTop = captions.scrollHeight;
+        } else if (ev.type === 'tool') {
+          logTool(ev.name, '', ev.found);
+          if (ev.found === false) addNote(`${ev.name}: no match`, { miss: true });
+        } else if (ev.type === 'done') {
+          clearBusy();
+          setAgentMarkdown(node, ev.answer || streamed || 'No answer returned.');
+          if (ev.conversation_id) setConversation(ev.conversation_id);
+          loadHistory();
+        } else if (ev.type === 'error') {
+          clearBusy();
+          node.remove();
+          addNote(ev.detail || 'text chat failed', { miss: true });
+        }
+      }
     }
-    loadHistory();
+    clearBusy();
   } catch (err) {
-    busy.remove();
+    clearBusy();
     node.textContent = `Error: ${err}`;
   }
 });

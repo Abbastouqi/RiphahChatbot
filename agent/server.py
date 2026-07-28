@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import config
@@ -322,6 +322,71 @@ def chat(payload: ChatRequest,
 
     result["conversation_id"] = conversation_id
     return result
+
+
+@app.post("/api/chat/stream")
+def chat_stream(payload: ChatRequest,
+                x_user_id: str | None = Header(None)) -> StreamingResponse:
+    """Streaming text chat: Server-Sent Events, one JSON object per event.
+
+        data: {"type":"delta","text":"..."}         -- append to the answer
+        data: {"type":"tool","name":...,"found":..} -- a lookup ran
+        data: {"type":"done","answer":...,"conversation_id":...}
+        data: {"type":"error","detail":"..."}
+
+    Same request body and headers as /api/chat; use this when the UI should
+    render the reply as it is generated instead of after it is complete.
+    """
+    from agent.text_agent import stream_answer
+
+    if config.TEXT_PROVIDER != "ollama":
+        required_key = ("OPENAI_API_KEY" if config.TEXT_PROVIDER == "openai"
+                        else "ANTHROPIC_API_KEY")
+        if not os.getenv(required_key):
+            raise HTTPException(500, f"{required_key} is not configured on the server")
+
+    uid = user_of(x_user_id)
+    conversation_id = conversations.ensure(payload.conversation_id, mode="text",
+                                           user_id=uid)
+    prior = (
+        conversations.history(conversation_id)
+        if payload.conversation_id
+        else [m.model_dump() for m in payload.history]
+    )
+    conversations.add_turn(conversation_id, "user", payload.message,
+                           channel="text", user_id=uid)
+
+    def events():
+        import json as _json
+
+        def sse(obj: dict[str, Any]) -> str:
+            return f"data: {_json.dumps(obj, ensure_ascii=False)}\n\n"
+
+        try:
+            for kind, data in stream_answer(payload.message, history=prior):
+                if kind == "delta":
+                    yield sse({"type": "delta", "text": data})
+                elif kind == "tool":
+                    conversations.add_turn(
+                        conversation_id, "tool", None, channel="text",
+                        tool_name=data["tool"], tool_input=data["input"],
+                        tool_found=data["found"], user_id=uid)
+                    yield sse({"type": "tool", "name": data["tool"],
+                               "found": data["found"]})
+                else:  # done
+                    conversations.add_turn(conversation_id, "assistant",
+                                           data.get("answer"), channel="text",
+                                           user_id=uid)
+                    yield sse({"type": "done", "answer": data.get("answer", ""),
+                               "conversation_id": conversation_id,
+                               "rounds": data.get("rounds", 0)})
+        except Exception as exc:  # noqa: BLE001 - stream errors go to the client as data
+            yield sse({"type": "error", "detail": f"{type(exc).__name__}: {exc}"})
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      # tell nginx/proxies not to buffer the stream
+                                      "X-Accel-Buffering": "no"})
 
 
 # ---------------------------------------------------------- conversation history

@@ -62,6 +62,111 @@ def answer(question: str, *, history: list[dict[str, Any]] | None = None,
     return _answer_anthropic(question, history=history, max_rounds=max_rounds)
 
 
+def stream_answer(question: str, *, history: list[dict[str, Any]] | None = None,
+                  max_rounds: int = MAX_TOOL_ROUNDS):
+    """Like answer(), but yields events as they happen so the UI can render the
+    reply word-by-word instead of waiting for the whole thing:
+
+        ("delta", "text fragment")   — append to the visible answer
+        ("tool",  {tool, input, found, ...})  — a lookup ran
+        ("done",  {answer, trace, ...})       — final result, same shape as answer()
+
+    Streaming is implemented for the OpenAI wire format (providers "openai" and
+    "ollama"). The Anthropic path falls back to one big delta.
+    """
+    import json
+
+    if config.TEXT_PROVIDER == "ollama":
+        client, model = _ollama_client(), config.OLLAMA_TEXT_MODEL
+    elif config.TEXT_PROVIDER == "openai":
+        client, model = _openai_client(), config.OPENAI_TEXT_MODEL
+    else:
+        result = _answer_anthropic(question, history=history, max_rounds=max_rounds)
+        yield ("delta", result.get("answer", ""))
+        yield ("done", result)
+        return
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": prompts.text_system_prompt()},
+    ]
+    for turn in history or []:
+        if turn.get("role") in ("user", "assistant") and turn.get("content"):
+            messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": question})
+
+    trace: list[dict[str, Any]] = []
+    tool_definitions = tools.openai_chat_tools()
+    answer_text = ""
+
+    for _ in range(max_rounds):
+        stream = client.chat.completions.create(
+            model=model,
+            max_completion_tokens=4000,
+            tools=tool_definitions,
+            messages=messages,
+            stream=True,
+        )
+
+        # Tool-call fragments arrive interleaved across chunks; reassemble by index.
+        calls: dict[int, dict[str, str]] = {}
+        round_text = ""
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta is None:
+                continue
+            if delta.content:
+                round_text += delta.content
+                answer_text += delta.content
+                yield ("delta", delta.content)
+            for tc in delta.tool_calls or []:
+                slot = calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function and tc.function.name:
+                    slot["name"] = tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["args"] += tc.function.arguments
+
+        if not calls:
+            yield ("done", {"answer": answer_text.strip(), "trace": trace,
+                            "rounds": len(trace)})
+            return
+
+        ordered = [calls[i] for i in sorted(calls)]
+        messages.append({
+            "role": "assistant",
+            "content": round_text or None,
+            "tool_calls": [{"id": c["id"], "type": "function",
+                            "function": {"name": c["name"], "arguments": c["args"]}}
+                           for c in ordered],
+        })
+        for c in ordered:
+            result = tools.execute(c["name"], c["args"])
+            try:
+                parsed_input = json.loads(c["args"] or "{}")
+            except json.JSONDecodeError:
+                parsed_input = {"raw": c["args"][:200]}
+            step = {"tool": c["name"], "input": parsed_input,
+                    "found": result.get("found", None),
+                    "result_preview": json.dumps(result, ensure_ascii=False)[:400]}
+            trace.append(step)
+            yield ("tool", step)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": c["id"],
+                "content": json.dumps(result, ensure_ascii=False)[:20000],
+            })
+
+    yield ("done", {
+        "answer": answer_text.strip() or
+                  "I wasn't able to complete that lookup. Please contact the Riphah "
+                  "admissions office at riphah.edu.pk/contact.",
+        "trace": trace, "exhausted": True,
+    })
+
+
 def _answer_openai(question: str, *, history: list[dict[str, Any]] | None = None,
                    max_rounds: int = MAX_TOOL_ROUNDS,
                    client=None, model: str | None = None) -> dict[str, Any]:
