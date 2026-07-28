@@ -61,8 +61,13 @@
     if (willOpen && !loaded) {
       // The iframe is created lazily so the widget adds zero weight to the
       // host page until a visitor actually opens the chat.
+      // If the host site knows who the visitor is (a logged-in portal user),
+      // it can set window.RIPHAH_USER_ID before this script loads — chat
+      // history then follows the person, not the browser (shared lab PCs).
+      var uid = (window.RIPHAH_USER_ID || (script.dataset && script.dataset.userId) || '')
+        .toString().trim().slice(0, 64);
       var frame = document.createElement('iframe');
-      frame.src = origin + '/';
+      frame.src = origin + '/' + (uid ? '?uid=' + encodeURIComponent(uid) : '');
       frame.allow = 'microphone';        // required for voice mode
       frame.title = 'Riphah International University assistant';
       panel.appendChild(frame);

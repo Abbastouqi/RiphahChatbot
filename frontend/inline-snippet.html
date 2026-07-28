@@ -34,8 +34,11 @@
   btn.onclick = function () {
     var open = !panel.classList.contains('open');
     if (open && !loaded) {
+      // Logged-in site? Set window.RIPHAH_USER_ID = "<portal user id>" before
+      // this snippet — history then follows the person, not the browser.
+      var uid = (window.RIPHAH_USER_ID || '').toString().trim().slice(0, 64);
       var f = document.createElement('iframe');
-      f.src = BOT + '/';
+      f.src = BOT + '/' + (uid ? '?uid=' + encodeURIComponent(uid) : '');
       f.allow = 'microphone';
       f.title = 'Riphah assistant';
       panel.appendChild(f);

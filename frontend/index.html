@@ -503,26 +503,38 @@ const captions = $('captions');
    also sends a developer key — we ask for it once and remember it.
    ──────────────────────────────────────────────────────────────────────────── */
 const USER_KEY = 'riphah.user';
-let userId = localStorage.getItem(USER_KEY);
+// Identity priority: (1) ?uid= passed by the embedding website (the portal's
+// logged-in user id — survives shared computers), (2) a per-browser UUID.
+// localStorage is wrapped: some browsers block it inside cross-site iframes,
+// and crashing here would take the whole widget down.
+let userId = (new URLSearchParams(location.search).get('uid') || '').trim().slice(0, 64);
 if (!userId) {
-  userId = (crypto.randomUUID ? crypto.randomUUID()
-            : Date.now().toString(36) + Math.random().toString(36).slice(2));
-  localStorage.setItem(USER_KEY, userId);
+  try { userId = localStorage.getItem(USER_KEY) || ''; } catch { /* blocked */ }
+  if (!userId) {
+    userId = (crypto.randomUUID ? crypto.randomUUID()
+              : Date.now().toString(36) + Math.random().toString(36).slice(2));
+    try { localStorage.setItem(USER_KEY, userId); } catch { /* per-tab identity */ }
+  }
 }
 const APIKEY_KEY = 'riphah.apikey';
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* blocked */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* blocked */ } },
+};
 const _fetch = window.fetch.bind(window);
 window.fetch = async (url, opts = {}) => {
   const isApi = typeof url === 'string' && url.startsWith('/api/');
   if (isApi) {
     opts.headers = Object.assign({}, opts.headers, { 'X-User-Id': userId });
-    const key = localStorage.getItem(APIKEY_KEY);
+    const key = store.get(APIKEY_KEY);
     if (key) opts.headers['X-API-Key'] = key;
   }
   let res = await _fetch(url, opts);
   if (isApi && res.status === 401) {
     const entered = prompt('This server requires an API key. Enter it to continue:');
     if (entered) {
-      localStorage.setItem(APIKEY_KEY, entered.trim());
+      store.set(APIKEY_KEY, entered.trim());
       opts.headers['X-API-Key'] = entered.trim();
       res = await _fetch(url, opts);
     }
@@ -540,12 +552,14 @@ const agentBuffers = new Map();   // response_id -> {node, text}
    pointer — the turns themselves are on the server, which is what makes a
    dropped call recoverable (the Realtime API keeps no state across connections).
    ──────────────────────────────────────────────────────────────────────────── */
-const CONV_KEY = 'riphah.conversation';
-let conversationId = localStorage.getItem(CONV_KEY) || null;
+// The pointer is scoped to the identity, so on a shared computer two portal
+// users never resume each other's thread (the server would 404 it anyway).
+const CONV_KEY = 'riphah.conversation:' + userId.slice(0, 12);
+let conversationId = store.get(CONV_KEY) || null;
 
 function setConversation(id) {
   conversationId = id || null;
-  if (id) localStorage.setItem(CONV_KEY, id); else localStorage.removeItem(CONV_KEY);
+  if (id) store.set(CONV_KEY, id); else store.del(CONV_KEY);
   document.querySelectorAll('.conv').forEach((el) =>
     el.classList.toggle('active', el.dataset.id === id));
 }
