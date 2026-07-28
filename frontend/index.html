@@ -1142,6 +1142,14 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushTurns();
 });
 
+/* Internal diagnostics (KB counts, models, key status, tool log) are for the
+   team, not end users. Hidden by default; open the page with ?debug=1 to see
+   them. Health polling still runs — it drives the send/voice button gating. */
+if (!new URLSearchParams(location.search).has('debug')) {
+  $('kbPill').style.display = 'none';
+  $('drawerBtn').style.display = 'none';
+}
+
 checkHealth();
 setInterval(checkHealth, 30000);
 restoreSession();
