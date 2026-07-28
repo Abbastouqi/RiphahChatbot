@@ -8,6 +8,25 @@ current host. Interactive API explorer: `http://YOUR-SERVER:8090/docs`
 
 ---
 
+## Fastest integration — the launcher widget (one line, zero code)
+
+Add this single line before `</body>` on any page of the website:
+
+```html
+<script src="https://YOUR-BOT-HOST/widget.js" defer></script>
+```
+
+That's the complete integration. Visitors get a floating chat icon in the
+bottom-right corner; clicking it slides the full chatbot open in a side panel
+(chat, streaming answers, voice, per-visitor private history), clicking again
+closes it. Mobile-responsive, Escape closes it, and the panel loads lazily so
+it adds no weight to the page until opened. Voice requires the site and the
+bot host to be HTTPS.
+
+Use the REST APIs below only if you want to build a fully custom chat UI.
+
+---
+
 ## Required headers on every request
 
 | Header | Value | Purpose |

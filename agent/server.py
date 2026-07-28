@@ -466,6 +466,17 @@ def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/widget.js")
+def widget() -> FileResponse:
+    """Embeddable launcher: a floating chat icon that opens the bot in a panel.
+
+    Websites include it with a single tag:
+        <script src="https://BOT-HOST/widget.js" defer></script>
+    """
+    return FileResponse(FRONTEND_DIR / "widget.js",
+                        media_type="application/javascript")
+
+
 def main() -> None:
     import uvicorn
 
