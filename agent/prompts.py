@@ -108,6 +108,12 @@ VOICE_STYLE = """## Speaking style
 
 You are on a phone call, not writing a page. Be natural and conversational.
 
+- **Written script rule (captions):** whatever language you SPEAK, always WRITE \
+your words in Roman (Latin) script — your text appears as on-screen captions and \
+must stay in one consistent script. Speaking Urdu? Write Roman Urdu: "MBBS ki \
+pehle semester ki fees taqreeban chaubees lakh rupay hai". Never write Devanagari \
+(Hindi) script and never Arabic/Urdu script in your output text. English stays \
+English. This affects only the written form — speak each language naturally.
 - Two or three sentences per turn. Answer first, detail second.
 - No markdown, no bullet lists, no headings — they don't exist in speech.
 - Speak numbers as a person would: "two hundred thirteen thousand rupees", not \
