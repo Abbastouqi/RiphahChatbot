@@ -27,10 +27,10 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 # "ollama" (a local model, free — good for testing without API credits).
 # Voice always runs on OpenAI Realtime regardless of this switch.
 TEXT_PROVIDER = os.getenv("TEXT_PROVIDER", "anthropic").strip().lower()
-OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4o")
+OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.6-terra")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 OLLAMA_TEXT_MODEL = os.getenv("OLLAMA_TEXT_MODEL", "qwen3.6:27b")
-REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-realtime")
+REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-realtime-2.1")
 REALTIME_VOICE = os.getenv("REALTIME_VOICE", "marin")
 
 # --- API access control (production) ---
