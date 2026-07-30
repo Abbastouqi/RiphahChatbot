@@ -11,9 +11,29 @@ from the description whether a question needs a lookup at all.
 from __future__ import annotations
 
 import json
+import os
+import time
 from typing import Any, Callable
 
 from kb import retrieve
+
+# ------------------------------------------------------------------ result cache
+# Every tool is a deterministic read of the knowledge base, so identical calls
+# can be served from memory. This matters most on voice: a repeated question
+# skips the SQL round-trip AND the embedding API call, and the answer starts
+# noticeably faster. TTL is short enough that a weekly KB refresh (or a fee
+# correction + restart) propagates the same day.
+CACHE_TTL = float(os.getenv("TOOL_CACHE_TTL", str(6 * 3600)))   # seconds; 0 disables
+CACHE_MAX = 500
+_cache: dict[str, tuple[float, str]] = {}   # key -> (stored_at, result_json)
+
+
+def _cache_key(name: str, arguments: dict[str, Any]) -> str:
+    return name + "|" + json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+
+
+def cache_stats() -> dict[str, int]:
+    return {"entries": len(_cache)}
 
 # --------------------------------------------------------------- specifications
 
@@ -255,12 +275,26 @@ def execute(name: str, arguments: dict[str, Any] | str) -> dict[str, Any]:
     if handler is None:
         return {"error": f"unknown tool '{name}'", "available": list(DISPATCH)}
 
+    key = _cache_key(name, arguments or {})
+    now = time.time()
+    if CACHE_TTL > 0:
+        hit = _cache.get(key)
+        if hit and now - hit[0] < CACHE_TTL:
+            return json.loads(hit[1])   # copy — callers may mutate the dict
+
     try:
-        return handler(**(arguments or {}))
+        result = handler(**(arguments or {}))
     except TypeError as exc:
         return {"error": f"bad arguments for {name}: {exc}"}
     except Exception as exc:  # noqa: BLE001 - surface, don't crash the conversation
         return {"error": f"{type(exc).__name__}: {exc}"}
+
+    if CACHE_TTL > 0 and isinstance(result, dict) and "error" not in result:
+        if len(_cache) >= CACHE_MAX:            # drop the oldest entries
+            for old in sorted(_cache, key=lambda k: _cache[k][0])[:CACHE_MAX // 5]:
+                _cache.pop(old, None)
+        _cache[key] = (now, json.dumps(result, ensure_ascii=False))
+    return result
 
 
 # ----------------------------------------------------------------- wire formats
