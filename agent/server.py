@@ -187,12 +187,12 @@ async def realtime_session(payload: SessionRequest | None = None,
                     "prompt": (
                         "Admissions call for Riphah International University, "
                         "Pakistan. Speakers use English, Urdu, Punjabi or Pashto, "
-                        "often mixed. Write Urdu/Punjabi/Pashto in Roman (Latin) "
-                        "script — e.g. 'MBBS ki fee kitni hai'. NEVER use "
-                        "Devanagari (Hindi) script — this is Urdu, not Hindi. "
+                        "often mixed. Write Urdu in proper Urdu (Arabic) script — "
+                        "NEVER Devanagari (Hindi) script; this is Urdu, not Hindi. "
+                        "Punjabi and Pashto also in their Arabic-based scripts. "
                         "Write English speech as English. Keep program and campus "
-                        "names in English (MBBS, BSSE, BS Computer Science, I-14, "
-                        "Al-Mizan, Gulberg Green)."
+                        "names in Latin letters (MBBS, BSSE, BS Computer Science, "
+                        "I-14, Al-Mizan, Gulberg Green)."
                     ),
                 },
                 "turn_detection": {"type": "semantic_vad"},

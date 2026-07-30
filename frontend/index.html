@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Riphah International University — Voice Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;600&display=swap" rel="stylesheet">
 <style>
 /* ─────────────────────────────────────────────────────────────────────────────
    Voice-first layout. Two states, one page:
@@ -189,6 +192,15 @@ body.chat:not(.live) .captions {
 .turn.user  { align-self: flex-end; background: #2e3048; border-bottom-right-radius: 5px; }
 .turn.agent { align-self: flex-start; background: var(--bubble); border-bottom-left-radius: 5px;
               border: 1px solid #202024; }
+
+/* Urdu/Arabic-script turns get nastaliq type and breathing room — the same
+   treatment that makes ChatGPT's Urdu transcripts readable. dir="auto" on
+   every turn handles the right-to-left alignment. */
+.turn.ur {
+  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting',
+               -apple-system, "Segoe UI", sans-serif;
+  line-height: 2.15; font-size: 15.5px;
+}
 
 /* Text-chat column: user stays in a bubble, assistant reads as an open answer. */
 body.chat:not(.live) .turn { font-size: 15px; line-height: 1.65; }
@@ -624,10 +636,20 @@ function updateChatMode() {
   document.body.classList.toggle('chat', captions.children.length > 0);
 }
 
+// Arabic-script content (Urdu/Pashto/Punjabi/Arabic) gets the nastaliq font
+// and, via dir="auto", right-to-left alignment — per message, so a mixed
+// Urdu/English conversation renders each turn correctly.
+const ARABIC_RE = /[؀-ۿݐ-ݿ]/;
+function tagScript(el, text) {
+  if (!el.classList.contains('ur') && ARABIC_RE.test(text || '')) el.classList.add('ur');
+}
+
 function addTurn(who, text) {
   const el = document.createElement('div');
   el.className = `turn ${who}`;
+  el.setAttribute('dir', 'auto');
   el.textContent = text;
+  tagScript(el, text);
   captions.appendChild(el);
   updateChatMode();
   captions.scrollTop = captions.scrollHeight;
@@ -692,6 +714,7 @@ function renderMarkdown(src) {
 
 function setAgentMarkdown(node, text) {
   node.classList.add('md');
+  tagScript(node, text);
   node.innerHTML = renderMarkdown(text);
   captions.scrollTop = captions.scrollHeight;
 }
@@ -958,6 +981,7 @@ function handleServerEvent(ev) {
       const b = agentBuffers.get(key);
       b.text += ev.delta || '';
       b.node.textContent = b.text;
+      tagScript(b.node, ev.delta);
       captions.scrollTop = captions.scrollHeight;
       break;
     }
@@ -1133,6 +1157,7 @@ $('composer').addEventListener('submit', async (ev) => {
           clearBusy();
           streamed += ev.text;
           node.textContent = streamed;
+          tagScript(node, ev.text);
           captions.scrollTop = captions.scrollHeight;
         } else if (ev.type === 'tool') {
           logTool(ev.name, '', ev.found);
