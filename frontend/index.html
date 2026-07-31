@@ -173,8 +173,12 @@ body.thinking .orb { filter: saturate(.55) brightness(.82); }
 .captions::-webkit-scrollbar { width: 5px; }
 .captions::-webkit-scrollbar-thumb { background: #2a2a2f; border-radius: 3px; }
 
-/* In text chat the captions become a full-height, centered conversation column
-   (voice keeps the compact strip under the orb). */
+/* During a voice call the screen is just the orb — like ChatGPT's voice mode.
+   Turns are still recorded invisibly; the moment the call ends they appear as
+   the full conversation in the chat column. */
+body.live .captions { display: none; }
+
+/* In text chat the captions become a full-height, centered conversation column. */
 body.chat:not(.live) .captions {
   top: 78px; bottom: 122px; max-height: none;
   width: min(760px, calc(100vw - 32px));
