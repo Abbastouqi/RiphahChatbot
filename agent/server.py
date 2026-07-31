@@ -195,7 +195,12 @@ async def realtime_session(payload: SessionRequest | None = None,
                         "I-14, Al-Mizan, Gulberg Green)."
                     ),
                 },
-                "turn_detection": {"type": "semantic_vad"},
+                # near_field: tuned for a speaker close to the mic — distant
+                # voices and room chatter are attenuated before the model
+                # hears them. eagerness low: wait for a clear, complete
+                # utterance instead of jumping on every sound.
+                "noise_reduction": {"type": "near_field"},
+                "turn_detection": {"type": "semantic_vad", "eagerness": "low"},
             },
             "output": {"voice": payload.voice or config.REALTIME_VOICE},
         },

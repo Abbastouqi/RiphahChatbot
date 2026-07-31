@@ -1025,7 +1025,16 @@ async function startCall() {
 
   try {
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        // AGC amplifies quiet/distant sounds — exactly what lets far-away
+        // voices leak in. Off: only a nearby speaker registers clearly.
+        autoGainControl: false,
+        // Supported browsers isolate the dominant nearby voice; others
+        // silently ignore the constraint.
+        voiceIsolation: true,
+      },
     });
   } catch {
     addNote('microphone permission denied', { miss: true });
