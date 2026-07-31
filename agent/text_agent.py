@@ -42,6 +42,19 @@ def _ollama_client():
     return OpenAI(base_url=config.OLLAMA_BASE_URL, api_key="ollama")
 
 
+def _model_kwargs(model: str) -> dict[str, Any]:
+    """Per-model request extras.
+
+    GPT-5.x are reasoning models; on /v1/chat/completions function tools are
+    only allowed with reasoning_effort="none" (the API rejects the combination
+    otherwise). Older models and Ollama reject the parameter entirely, so it
+    is added only where required.
+    """
+    if model.startswith(("gpt-5", "o3", "o4")):
+        return {"reasoning_effort": "none"}
+    return {}
+
+
 def answer(question: str, *, history: list[dict[str, Any]] | None = None,
            max_rounds: int = MAX_TOOL_ROUNDS) -> dict[str, Any]:
     """Run the tool loop until the model stops calling tools.
@@ -105,6 +118,7 @@ def stream_answer(question: str, *, history: list[dict[str, Any]] | None = None,
             tools=tool_definitions,
             messages=messages,
             stream=True,
+            **_model_kwargs(model),
         )
 
         # Tool-call fragments arrive interleaved across chunks; reassemble by index.
@@ -191,6 +205,7 @@ def _answer_openai(question: str, *, history: list[dict[str, Any]] | None = None
             max_completion_tokens=4000,
             tools=tool_definitions,
             messages=messages,
+            **_model_kwargs(model),
         )
         message = response.choices[0].message
         tool_calls = message.tool_calls or []
