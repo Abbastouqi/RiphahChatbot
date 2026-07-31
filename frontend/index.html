@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;600&display=swap" rel="stylesheet">
+<link rel="icon" href="/logo.png">
 <style>
 /* ─────────────────────────────────────────────────────────────────────────────
    Voice-first layout. Two states, one page:
@@ -48,6 +49,10 @@ body {
 }
 .mark { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -.01em; }
 .mark svg { width: 20px; height: 20px; flex: none; }
+.mark img {
+  width: 30px; height: 30px; flex: none; object-fit: contain;
+  background: #fff; border-radius: 8px; padding: 2px;   /* logo is dark-on-white */
+}
 .mark small { display: block; font-weight: 400; font-size: 11.5px; color: var(--dim); letter-spacing: 0; }
 .grow { flex: 1 1 auto; }
 
@@ -414,7 +419,9 @@ body.history-open .history { transform: none; }
 
 <div class="topbar">
   <div class="mark">
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <img src="/logo.png" alt="Riphah International University"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="display:none">
       <path d="M12 2 3 6.5v5C3 17 6.9 21.3 12 22.5c5.1-1.2 9-5.5 9-11v-5L12 2Z"
             stroke="#7c8cff" stroke-width="1.6" stroke-linejoin="round"/>
       <path d="M8.5 12.2h3.2a2.1 2.1 0 0 0 0-4.2H8.5v8.4m3 -4.2 2.6 4.2"

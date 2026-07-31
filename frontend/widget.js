@@ -45,12 +45,19 @@
   style.textContent = css;
   document.head.appendChild(style);
 
-  // The "Ask AI" sparkle — one large four-point star with two companions.
+  // Friendly robot face: antenna, headphone band with ear cups, round eyes
+  // and a smile — white on the gradient button.
   var chatIcon =
     '<svg viewBox="0 0 24 24" fill="none">' +
-    '<path d="M11 3.5c.2-.6 1-.6 1.2 0l1.5 4.4c.06.2.22.35.42.42l4.4 1.5c.6.2.6 1 0 1.2l-4.4 1.5a.66.66 0 0 0-.42.42l-1.5 4.4c-.2.6-1 .6-1.2 0l-1.5-4.4a.66.66 0 0 0-.42-.42l-4.4-1.5c-.6-.2-.6-1 0-1.2l4.4-1.5c.2-.07.35-.22.42-.42L11 3.5Z" fill="#fff"/>' +
-    '<path d="M18.6 14.4c.1-.3.5-.3.6 0l.55 1.6c.03.1.1.17.2.2l1.6.55c.3.1.3.5 0 .6l-1.6.55a.33.33 0 0 0-.2.2l-.55 1.6c-.1.3-.5.3-.6 0l-.55-1.6a.33.33 0 0 0-.2-.2l-1.6-.55c-.3-.1-.3-.5 0-.6l1.6-.55c.1-.03.17-.1.2-.2l.55-1.6Z" fill="#fff" opacity=".92"/>' +
-    '<path d="M6.1 16.9c.08-.25.42-.25.5 0l.4 1.2c.03.08.09.14.17.17l1.2.4c.25.08.25.42 0 .5l-1.2.4a.27.27 0 0 0-.17.17l-.4 1.2c-.08.25-.42.25-.5 0l-.4-1.2a.27.27 0 0 0-.17-.17l-1.2-.4c-.25-.08-.25-.42 0-.5l1.2-.4a.27.27 0 0 0 .17-.17l.4-1.2Z" fill="#fff" opacity=".8"/>' +
+    '<path d="M12 2.4v2.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>' +
+    '<circle cx="12" cy="2.4" r="1.05" fill="#fff"/>' +
+    '<path d="M4.6 12.2a7.4 7.4 0 0 1 14.8 0" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>' +
+    '<rect x="5.6" y="6.6" width="12.8" height="11" rx="3.4" fill="#fff"/>' +
+    '<rect x="2.7" y="10.6" width="2.5" height="5" rx="1.25" fill="#fff"/>' +
+    '<rect x="18.8" y="10.6" width="2.5" height="5" rx="1.25" fill="#fff"/>' +
+    '<circle cx="9.4" cy="11.3" r="1.45" stroke="#7255e0" stroke-width="1.5"/>' +
+    '<circle cx="14.6" cy="11.3" r="1.45" stroke="#7255e0" stroke-width="1.5"/>' +
+    '<path d="M9.6 14.9c.7.75 1.6 1.15 2.4 1.15s1.7-.4 2.4-1.15" stroke="#7255e0" stroke-width="1.5" stroke-linecap="round"/>' +
     '</svg>';
   var closeIcon =
     '<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';

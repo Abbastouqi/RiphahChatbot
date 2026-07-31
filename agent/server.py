@@ -485,6 +485,16 @@ def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/logo.png")
+def logo() -> FileResponse:
+    """University logo for the header and favicon. Drop the official logo at
+    frontend/logo.png; until then the UI falls back to the built-in mark."""
+    path = FRONTEND_DIR / "logo.png"
+    if not path.exists():
+        raise HTTPException(404, "logo.png not installed")
+    return FileResponse(path, media_type="image/png")
+
+
 @app.get("/widget.js")
 def widget() -> FileResponse:
     """Embeddable launcher: a floating chat icon that opens the bot in a panel.
